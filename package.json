@@ -1,0 +1,14 @@
+{
+  "name": "pvg-jhg-price-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch": "node scripts/fetch.mjs",
+    "render": "node scripts/render.mjs",
+    "run": "bash scripts/run.sh"
+  },
+  "dependencies": {
+    "playwright": "^1.59.0"
+  }
+}
