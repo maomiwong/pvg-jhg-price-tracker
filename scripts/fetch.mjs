@@ -115,7 +115,7 @@ async function main() {
   console.log(`[${snapshotAt}] USD→CNY rate: ${rate ?? 'unknown (will fall back to 7.2)'}`);
   const usdToCny = rate ?? 7.2;
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, args: ['--ignore-certificate-errors'] });
 
   const results = [];
   for (const origin of ORIGINS) {
