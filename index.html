@@ -2,10 +2,299 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>上海 → 西双版纳 机票走势</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>上海 → 西双版纳 机票价格走势</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f7fa;
+    color: #333;
+    min-height: 100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, #00b277 0%, #007a52 100%);
+    color: #fff;
+    padding: 20px 24px 16px;
+  }
+  .header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.02em; }
+  .header .subtitle { font-size: 0.85rem; opacity: 0.85; margin-top: 4px; }
+  .price-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 16px 16px 0;
+  }
+  .price-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    border-left: 4px solid #00b277;
+  }
+  .price-card .route { font-size: 0.7rem; color: #888; font-weight: 600; text-transform: uppercase; }
+  .price-card .date { font-size: 0.75rem; color: #555; margin-top: 2px; }
+  .price-card .price {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #00b277;
+    margin-top: 6px;
+  }
+  .price-card .price.no-data { color: #bbb; font-size: 1rem; font-weight: 400; }
+  .price-card .delta {
+    font-size: 0.75rem;
+    margin-top: 3px;
+    font-weight: 600;
+  }
+  .delta.up { color: #e5383b; }
+  .delta.down { color: #00b277; }
+  .delta.same { color: #aaa; }
+  .chart-container {
+    background: #fff;
+    border-radius: 12px;
+    margin: 16px;
+    padding: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  }
+  .chart-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #444;
+    margin-bottom: 12px;
+  }
+  canvas { max-width: 100%; }
+  .no-data-msg {
+    text-align: center;
+    padding: 48px 16px;
+    color: #aaa;
+    font-size: 0.9rem;
+  }
+  .no-data-msg .icon { font-size: 2.5rem; margin-bottom: 12px; }
+  .footer {
+    text-align: center;
+    font-size: 0.72rem;
+    color: #aaa;
+    padding: 12px 16px 24px;
+  }
+  .error-badge {
+    display: inline-block;
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+</style>
 </head>
 <body>
-<h1>等待第一次数据抓取…</h1>
-<p>routine 跑过一次后这里会被替换为走势图。</p>
+
+<div class="header">
+  <h1>上海 → 西双版纳 机票价格走势</h1>
+  <div class="subtitle" id="lastSnap">最近快照：—</div>
+</div>
+
+<div class="price-grid" id="priceGrid"></div>
+
+<div class="chart-container">
+  <div class="chart-title">历史价格走势（经济舱最低价 CNY）</div>
+  <div id="chartArea"></div>
+</div>
+
+<div class="footer" id="footer">
+  数据来源：携程 / 去哪儿 / 春秋航空等公开搜索结果 · 单程经济舱最低价<br>
+  监测频率：09:00 / 15:00 / 21:00（北京时间）
+</div>
+
+<script>
+// ── 内嵌数据（由 agent 每次运行时替换） ──────────────────────────────────────
+const PRICES = [];
+// ────────────────────────────────────────────────────────────────────────────
+
+const COMBOS = [
+  { origin: "PVG", depart_date: "2026-05-04" },
+  { origin: "PVG", depart_date: "2026-05-11" },
+  { origin: "PVG", depart_date: "2026-05-18" },
+  { origin: "PVG", depart_date: "2026-05-25" },
+  { origin: "SHA", depart_date: "2026-05-04" },
+  { origin: "SHA", depart_date: "2026-05-11" },
+  { origin: "SHA", depart_date: "2026-05-18" },
+  { origin: "SHA", depart_date: "2026-05-25" },
+];
+
+const COLORS = [
+  "#00b277", "#00c98a", "#35d49f", "#6be0bc",
+  "#007a52", "#009966", "#00e699", "#b3f5e0"
+];
+
+// 找某条线所有价格，按时间排序
+function seriesForCombo(origin, depart_date) {
+  return PRICES
+    .filter(p => p.origin === origin && p.depart_date === depart_date)
+    .sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
+}
+
+// 最新价格
+function latestPrice(origin, depart_date) {
+  const s = seriesForCombo(origin, depart_date);
+  return s.length ? s[s.length - 1] : null;
+}
+
+// 前一次价格
+function prevPrice(origin, depart_date) {
+  const s = seriesForCombo(origin, depart_date);
+  return s.length >= 2 ? s[s.length - 2] : null;
+}
+
+// 最新 snapshot 时间
+function lastSnapshotTime() {
+  if (!PRICES.length) return null;
+  return PRICES.map(p => p.snapshot_at).sort().at(-1);
+}
+
+// 所有快照时间点（X 轴）
+function allSnapshotTimes() {
+  const times = [...new Set(PRICES.map(p => p.snapshot_at))].sort();
+  return times;
+}
+
+// 格式化时间
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${mo}-${da} ${hh}:${mm}`;
+}
+
+function render() {
+  const lastTime = lastSnapshotTime();
+  document.getElementById("lastSnap").textContent =
+    lastTime ? `最近快照：${fmtTime(lastTime)}（北京时间）` : "暂无数据快照";
+
+  // ── 价格卡片 ──
+  const grid = document.getElementById("priceGrid");
+  grid.innerHTML = "";
+  COMBOS.forEach(({ origin, depart_date }, i) => {
+    const latest = latestPrice(origin, depart_date);
+    const prev = prevPrice(origin, depart_date);
+    const card = document.createElement("div");
+    card.className = "price-card";
+    card.style.borderLeftColor = COLORS[i];
+
+    let priceHtml, deltaHtml = "";
+    if (latest && latest.min_price_cny != null) {
+      priceHtml = `<div class="price">¥${latest.min_price_cny.toLocaleString()}</div>`;
+      if (prev && prev.min_price_cny != null) {
+        const diff = latest.min_price_cny - prev.min_price_cny;
+        if (diff > 0) {
+          deltaHtml = `<div class="delta up">▲ +${diff}</div>`;
+        } else if (diff < 0) {
+          deltaHtml = `<div class="delta down">▼ ${diff}</div>`;
+        } else {
+          deltaHtml = `<div class="delta same">— 持平</div>`;
+        }
+      }
+    } else {
+      priceHtml = `<div class="price no-data">暂无数据</div>`;
+      deltaHtml = `<span class="error-badge">获取失败</span>`;
+    }
+
+    const dateLabel = depart_date.slice(5).replace("-", "/");
+    card.innerHTML = `
+      <div class="route">${origin} → JHG</div>
+      <div class="date">出发 ${dateLabel}</div>
+      ${priceHtml}
+      ${deltaHtml}
+    `;
+    grid.appendChild(card);
+  });
+
+  // ── 走势图 ──
+  const chartArea = document.getElementById("chartArea");
+  chartArea.innerHTML = "";
+
+  const xLabels = allSnapshotTimes();
+
+  if (xLabels.length === 0) {
+    chartArea.innerHTML = `
+      <div class="no-data-msg">
+        <div class="icon">📊</div>
+        <div>暂无价格数据</div>
+        <div style="margin-top:8px;font-size:0.8rem;">agent 首次成功抓取后，走势图将在此显示</div>
+      </div>`;
+    return;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.height = 280;
+  chartArea.appendChild(canvas);
+
+  const datasets = COMBOS.map(({ origin, depart_date }, i) => {
+    const series = seriesForCombo(origin, depart_date);
+    const seriesMap = Object.fromEntries(series.map(p => [p.snapshot_at, p.min_price_cny]));
+    const data = xLabels.map(t => seriesMap[t] ?? null);
+    const dateLabel = depart_date.slice(5).replace("-", "/");
+    return {
+      label: `${origin}→JHG ${dateLabel}`,
+      data,
+      borderColor: COLORS[i],
+      backgroundColor: COLORS[i] + "22",
+      tension: 0.3,
+      spanGaps: true,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      borderWidth: 2,
+    };
+  });
+
+  new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: xLabels.map(fmtTime),
+      datasets,
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { font: { size: 11 }, boxWidth: 14, padding: 10 }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed.y;
+              return v != null ? `${ctx.dataset.label}: ¥${v.toLocaleString()}` : `${ctx.dataset.label}: 无数据`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, maxRotation: 45 },
+          grid: { color: "#f0f0f0" }
+        },
+        y: {
+          title: { display: true, text: "价格 (CNY)", font: { size: 11 } },
+          ticks: {
+            callback: v => "¥" + v.toLocaleString(),
+            font: { size: 10 }
+          },
+          grid: { color: "#f0f0f0" }
+        }
+      }
+    }
+  });
+}
+
+render();
+</script>
 </body>
 </html>
