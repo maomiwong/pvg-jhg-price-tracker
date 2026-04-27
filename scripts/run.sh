@@ -4,15 +4,16 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# 使用沙箱预装浏览器（/opt/pw-browsers），避免重复下载
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/pw-browsers}"
+
 echo "==> 安装依赖（如需要）"
 if [ ! -d node_modules ]; then
-  npm init -y >/dev/null 2>&1 || true
-  npm install --silent playwright
-  npx playwright install chromium
+  npm install --silent
 fi
 
 echo "==> 抓取价格"
-node scripts/fetch.mjs
+PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" node scripts/fetch.mjs
 
 echo "==> 注入 index.html"
 node scripts/render.mjs
