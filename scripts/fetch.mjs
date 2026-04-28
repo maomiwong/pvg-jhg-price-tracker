@@ -124,7 +124,7 @@ async function main() {
   const usdToCny = await getUsdToCny();
   console.log(`[${snapshotAt}] USD→CNY = ${usdToCny}`);
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, args: ['--ignore-certificate-errors'] });
 
   let totalFlights = 0;
   let runErrors = [];
